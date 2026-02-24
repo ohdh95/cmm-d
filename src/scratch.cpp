@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 #include <vector>
+#include <algorithm>
 #include <boost/dynamic_bitset.hpp>
 
 #include "scratch.h"
@@ -93,9 +94,11 @@ template <typename T> void SSDQueryScratch<T>::reset()
     full_retset.clear();
 }
 
-template <typename T> SSDQueryScratch<T>::SSDQueryScratch(size_t aligned_dim, size_t visited_reserve)
+template <typename T>
+SSDQueryScratch<T>::SSDQueryScratch(size_t aligned_dim, size_t visited_reserve, size_t max_node_len)
 {
-    size_t coord_alloc_size = ROUND_UP(sizeof(T) * aligned_dim, 256);
+    const size_t min_coord_bytes = sizeof(T) * aligned_dim;
+    size_t coord_alloc_size = ROUND_UP((std::max)(min_coord_bytes, max_node_len), 256);
 
     diskann::alloc_aligned((void **)&coord_scratch, coord_alloc_size, 256);
     diskann::alloc_aligned((void **)&sector_scratch, defaults::MAX_N_SECTOR_READS * defaults::SECTOR_LEN,
@@ -121,7 +124,8 @@ template <typename T> SSDQueryScratch<T>::~SSDQueryScratch()
 }
 
 template <typename T>
-SSDThreadData<T>::SSDThreadData(size_t aligned_dim, size_t visited_reserve) : scratch(aligned_dim, visited_reserve)
+SSDThreadData<T>::SSDThreadData(size_t aligned_dim, size_t visited_reserve, size_t max_node_len)
+    : scratch(aligned_dim, visited_reserve, max_node_len)
 {
 }
 

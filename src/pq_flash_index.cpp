@@ -15,7 +15,7 @@
 #include <sys/mman.h>
 #include <x86intrin.h>
 // #define ssd
-int numa_node = 0; // 0: DRAM,  2: CMM-D
+int numa_node = 2; // 0: DRAM,  2: CMM-D
 #ifdef _WINDOWS
 #include "windows_aligned_file_reader.h"
 #else
@@ -129,7 +129,7 @@ template <typename T, typename LabelT> inline T *PQFlashIndex<T, LabelT>::offset
 }
 
 template <typename T, typename LabelT>
-void PQFlashIndex<T, LabelT>::setup_thread_data(uint64_t nthreads, uint64_t visited_reserve)
+void PQFlashIndex<T, LabelT>::setup_thread_data(uint64_t nthreads, uint64_t visited_reserve, uint64_t max_node_len)
 {
     diskann::cout << "Setting up thread-specific contexts for nthreads: " << nthreads << std::endl;
 // omp parallel for to generate unique thread IDs
@@ -138,7 +138,8 @@ void PQFlashIndex<T, LabelT>::setup_thread_data(uint64_t nthreads, uint64_t visi
     {
 #pragma omp critical
         {
-            SSDThreadData<T> *data = new SSDThreadData<T>(this->_aligned_dim, visited_reserve); // SSDThreadData 할당
+            SSDThreadData<T> *data =
+                new SSDThreadData<T>(this->_aligned_dim, visited_reserve, max_node_len); // SSDThreadData 할당
             this->reader->register_thread();
             data->ctx = this->reader->get_ctx();
             this->_thread_data.push(data);
@@ -1023,9 +1024,6 @@ int PQFlashIndex<T, LabelT>::load_from_separate_paths(uint32_t num_threads, cons
     // bytes are needed to store the header and read in that many using our
     // 'standard' aligned file reader approach.
     reader->open(_disk_index_file);
-    this->setup_thread_data(num_threads);
-    this->_max_nthreads = num_threads;
-
     char *bytes = getHeaderBytes();
     ContentBuf buf(bytes, HEADER_SIZE);
     std::basic_istream<char> index_metadata(&buf);
@@ -1099,6 +1097,8 @@ int PQFlashIndex<T, LabelT>::load_from_separate_paths(uint32_t num_threads, cons
 
 #ifdef EXEC_ENV_OLS
     delete[] bytes;
+    this->setup_thread_data(num_threads, 4096, _max_node_len);
+    this->_max_nthreads = num_threads;
 #else
     index_metadata.close();
 #endif
@@ -1107,7 +1107,7 @@ int PQFlashIndex<T, LabelT>::load_from_separate_paths(uint32_t num_threads, cons
     // open AlignedFileReader handle to index_file
     std::string index_fname(_disk_index_file);
     reader->open(index_fname);
-    this->setup_thread_data(num_threads);
+    this->setup_thread_data(num_threads, 4096, _max_node_len);
     this->_max_nthreads = num_threads;
 
     // ohdh95: mem_index load
@@ -1151,6 +1151,8 @@ int PQFlashIndex<T, LabelT>::load_from_separate_paths(uint32_t num_threads, cons
     #endif
 
     std::cout << "Loading complete." << std::endl;
+
+    sleep(10);
 #endif
 
 #ifdef EXEC_ENV_OLS
@@ -1353,7 +1355,7 @@ void PQFlashIndex<T, LabelT>::cached_beam_search(const T *query1, const uint64_t
     pq_query_scratch->initialize(this->_data_dim, aligned_query_T);
 
     // Local buffer for DRAM-copy path.
-    char* local_node_buf;
+    char *local_node_buf = reinterpret_cast<char *>(query_scratch->coord_scratch);
 
     // // sector scratch
     // char *sector_scratch = query_scratch->sector_scratch;
@@ -1545,7 +1547,7 @@ void PQFlashIndex<T, LabelT>::cached_beam_search(const T *query1, const uint64_t
             io_start = __rdtscp(&io_cpu_start);
 
             // Copy full node payload into a local buffer to avoid overflowing coord_scratch.
-            memcpy(local_node_buf, node_disk_buf, _aligned_dim);
+            memcpy(local_node_buf, node_disk_buf, _max_node_len);
 
             io_end = __rdtscp(&io_cpu_end);
 
@@ -1558,7 +1560,7 @@ void PQFlashIndex<T, LabelT>::cached_beam_search(const T *query1, const uint64_t
 
             _compute_start = __rdtscp(&_compute_cpu_start);
 
-            cur_expanded_dist = _dist_cmp->compare(aligned_query_T, node_fp_coords, (uint32_t)_aligned_dim); // 실제 거리
+            cur_expanded_dist = _dist_cmp->compare(aligned_query_T, node_fp_coords, (uint32_t)_aligned_dim);
 
             _compute_end = __rdtscp(&_compute_cpu_end);
 
@@ -1568,16 +1570,16 @@ void PQFlashIndex<T, LabelT>::cached_beam_search(const T *query1, const uint64_t
 
             full_retset.push_back(Neighbor(frontier_nhood.first, cur_expanded_dist));
 
-            io_start = __rdtscp(&io_cpu_start);
+            // io_start = __rdtscp(&io_cpu_start);
 
-            // Copy full node payload into a local buffer to avoid overflowing coord_scratch.
-            memcpy(local_node_buf, node_disk_buf + _aligned_dim, 33 * sizeof(uint32_t)); // R + 1
+            // // Copy full node payload into a local buffer to avoid overflowing coord_scratch.
+            // memcpy(local_node_buf, node_disk_buf + _aligned_dim, 33 * sizeof(uint32_t)); // R + 1
 
-            io_end = __rdtscp(&io_cpu_end);
+            // io_end = __rdtscp(&io_cpu_end);
 
-            if (stats != nullptr && io_cpu_start == io_cpu_end) {
-                stats->io_cycle += io_end - io_start;
-            }
+            // if (stats != nullptr && io_cpu_start == io_cpu_end) {
+            //     stats->io_cycle += io_end - io_start;
+            // }
 
             uint32_t *node_buf = offset_to_node_nhood(local_node_buf);
             uint64_t nnbrs = (uint64_t)(*node_buf);
