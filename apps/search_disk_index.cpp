@@ -27,6 +27,25 @@
 #endif
 #endif
 
+#include <sys/prctl.h>
+#include <cerrno>
+
+static inline void perf_off()
+{
+    if (prctl(PR_TASK_PERF_EVENTS_DISABLE) != 0)
+    {
+        diskann::cerr << "Warning: prctl(PR_TASK_PERF_EVENTS_DISABLE) failed. errno=" << errno << std::endl;
+    }
+}
+
+static inline void perf_on()
+{
+    if (prctl(PR_TASK_PERF_EVENTS_ENABLE) != 0)
+    {
+        diskann::cerr << "Warning: prctl(PR_TASK_PERF_EVENTS_ENABLE) failed. errno=" << errno << std::endl;
+    }
+}
+
 #define WARMUP false
 
 namespace po = boost::program_options;
@@ -179,7 +198,7 @@ int search_disk_index(diskann::Metric &metric, const std::string &index_path_pre
     std::string recall_string = "Recall@" + std::to_string(recall_at);
     diskann::cout << std::setw(6) << "L" << std::setw(12) << "Beamwidth" << std::setw(16) << "QPS" << std::setw(16)
                   << "Mean Latency" << std::setw(16) << "99.9 Latency" << std::setw(16) << "Mean IOs" << std::setw(16)
-                  << "Mean IO (us)" << std::setw(16) << "CPU (s)";
+                  << "Mean IO (us)" << std::setw(16) << "Mean CPU (us)" << std::setw(16) << "Mean CPU1 (us)" << std::setw(16) << "Mean CPU2 (us)" << std::setw(16) << "Mean CPU3 (us)";
     if (calc_recall_flag)
     {
         diskann::cout << std::setw(16) << recall_string << std::endl;
@@ -222,6 +241,7 @@ int search_disk_index(diskann::Metric &metric, const std::string &index_path_pre
         auto stats = new diskann::QueryStats[query_num];
 
         std::vector<uint64_t> query_result_ids_64(recall_at * query_num);
+        perf_on();
         auto s = std::chrono::high_resolution_clock::now();
 
 #pragma omp parallel for schedule(dynamic, 1)
@@ -252,26 +272,37 @@ int search_disk_index(diskann::Metric &metric, const std::string &index_path_pre
             }
         }
         auto e = std::chrono::high_resolution_clock::now();
+        perf_off();
         std::chrono::duration<double> diff = e - s;
         double qps = (1.0 * query_num) / (1.0 * diff.count());
+        double frequency_mhz = 2600.0; // 클럭 값
 
         diskann::convert_types<uint64_t, uint32_t>(query_result_ids_64.data(), query_result_ids[test_id].data(),
                                                    query_num, recall_at);
 
         auto mean_latency = diskann::get_mean_stats<float>(
-            stats, query_num, [](const diskann::QueryStats &stats) { return stats.total_us; });
+            stats, query_num, [](const diskann::QueryStats &stats) { return stats.total_cycle; });
 
         auto latency_999 = diskann::get_percentile_stats<float>(
-            stats, query_num, 0.999, [](const diskann::QueryStats &stats) { return stats.total_us; });
+            stats, query_num, 0.999, [](const diskann::QueryStats &stats) { return stats.total_cycle; });
 
         auto mean_ios = diskann::get_mean_stats<uint32_t>(stats, query_num,
                                                           [](const diskann::QueryStats &stats) { return stats.n_ios; });
 
         auto mean_cpuus = diskann::get_mean_stats<float>(stats, query_num,
-                                                         [](const diskann::QueryStats &stats) { return stats.cpu_us; });
+                                                         [](const diskann::QueryStats &stats) { return stats.cpu_cycle; });
+
+        auto mean_cpuus1 = diskann::get_mean_stats<float>(stats, query_num,
+                                                         [](const diskann::QueryStats &stats) { return stats.cpu_cycle1; });
+
+        auto mean_cpuus2 = diskann::get_mean_stats<float>(stats, query_num,
+                                                         [](const diskann::QueryStats &stats) { return stats.cpu_cycle2; });
+
+        auto mean_cpuus3 = diskann::get_mean_stats<float>(stats, query_num,
+                                                         [](const diskann::QueryStats &stats) { return stats.cpu_cycle3; });
 
         auto mean_io_us = diskann::get_mean_stats<float>(stats, query_num,
-                                                         [](const diskann::QueryStats &stats) { return stats.io_us; });
+                                                         [](const diskann::QueryStats &stats) { return stats.io_cycle; });
 
         double recall = 0;
         if (calc_recall_flag)
@@ -282,8 +313,8 @@ int search_disk_index(diskann::Metric &metric, const std::string &index_path_pre
         }
 
         diskann::cout << std::setw(6) << L << std::setw(12) << optimized_beamwidth << std::setw(16) << qps
-                      << std::setw(16) << mean_latency << std::setw(16) << latency_999 << std::setw(16) << mean_ios
-                      << std::setw(16) << mean_io_us << std::setw(16) << mean_cpuus;
+                      << std::setw(16) << (double)mean_latency / frequency_mhz << std::setw(16) << (double)latency_999 / frequency_mhz << std::setw(16) << mean_ios
+                      << std::setw(16) << mean_io_us / frequency_mhz << std::setw(16) << (double)mean_cpuus / frequency_mhz << std::setw(16) << (double)mean_cpuus1 / frequency_mhz << std::setw(16) << (double)mean_cpuus2 / frequency_mhz << std::setw(16) << (double)mean_cpuus3 / frequency_mhz;
         if (calc_recall_flag)
         {
             diskann::cout << std::setw(16) << recall << std::endl;
@@ -315,6 +346,7 @@ int search_disk_index(diskann::Metric &metric, const std::string &index_path_pre
 
 int main(int argc, char **argv)
 {
+    perf_off();              // 시작하자마자 카운트 OFF
     std::string data_type, dist_fn, index_path_prefix, result_path_prefix, query_file, gt_file, filter_label,
         label_type, query_filters_file;
     uint32_t num_threads, K, W, num_nodes_to_cache, search_io_limit;

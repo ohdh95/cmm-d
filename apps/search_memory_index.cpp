@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
-
+// ./apps/search_memory_index  --data_type uint8 --dist_fn l2 --index_path_prefix /home/ohdh95/mem_index/ --query_file /home/ohdh95/data/sift_query.fbin  --gt_file /home/ohdh95/data/sift_query_learn_gt100 -K 10 -L 10 20 30 40 50 100
+// numactl -m 2 -N 0 ./apps/search_memory_index  --data_type uint8 --dist_fn l2 --index_path_prefix /home/ohdh95/mem_index/125m_index --query_file /home/ohdh95/data/sift500m_query.ubin --gt_file /home/ohdh95/data/sift_query_learn_gt100 -K 10 -L 10 20 30 40 50 100
 #include <cstring>
 #include <iomanip>
 #include <algorithm>

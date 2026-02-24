@@ -23,7 +23,15 @@ struct QueryStats
     float total_us = 0; // total time to process query in micros
     float io_us = 0;    // total time spent in IO
     float cpu_us = 0;   // total time spent in CPU
+    float cpu_us1 = 0;   // total time spent in CPU
 
+    unsigned long long total_cycle = 0; // total cycles for query processing
+    unsigned long long io_cycle = 0; // total cycles for query processing
+    unsigned long long cpu_cycle = 0; // total cycles for query processing
+    unsigned long long cpu_cycle1 = 0; // total cycles for query processing
+    unsigned long long cpu_cycle2 = 0; // total cycles for query processing
+    unsigned long long cpu_cycle3 = 0; // total cycles for query processing
+    unsigned long long cpu_cycle4 = 0; // total cycles for query processing
     unsigned n_4k = 0;         // # of 4kB reads
     unsigned n_8k = 0;         // # of 8kB reads
     unsigned n_12k = 0;        // # of 12kB reads
@@ -56,10 +64,20 @@ template <typename T>
 inline double get_mean_stats(QueryStats *stats, uint64_t len, const std::function<T(const QueryStats &)> &member_fn)
 {
     double avg = 0;
+    int zero_count = 0;
+
     for (uint64_t i = 0; i < len; i++)
     {
+        if (member_fn(stats[i]) == 0) {
+            zero_count++;
+            continue; // Skip this entry if the value is zero
+        }
         avg += (double)member_fn(stats[i]);
     }
-    return avg / len;
+    if (len - zero_count == 0) {
+        return 0; // Avoid division by zero if all entries are zero
+    }
+
+    return avg / (len - zero_count); // Divide by the count of non-zero entries
 }
 } // namespace diskann
