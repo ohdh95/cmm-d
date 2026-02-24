@@ -1546,8 +1546,11 @@ void PQFlashIndex<T, LabelT>::cached_beam_search(const T *query1, const uint64_t
 
             io_start = __rdtscp(&io_cpu_start);
 
-            // Copy full node payload into a local buffer to avoid overflowing coord_scratch.
+            // 256 byte
             memcpy(local_node_buf, node_disk_buf, _max_node_len);
+
+            // 128 byte
+            // memcpy(local_node_buf, node_disk_buf, _disk_bytes_per_point);
 
             io_end = __rdtscp(&io_cpu_end);
 
@@ -1572,8 +1575,8 @@ void PQFlashIndex<T, LabelT>::cached_beam_search(const T *query1, const uint64_t
 
             // io_start = __rdtscp(&io_cpu_start);
 
-            // // Copy full node payload into a local buffer to avoid overflowing coord_scratch.
-            // memcpy(local_node_buf, node_disk_buf + _aligned_dim, 33 * sizeof(uint32_t)); // R + 1
+            // memcpy(local_node_buf + _disk_bytes_per_point, node_disk_buf + _disk_bytes_per_point,
+            //        _max_node_len - _disk_bytes_per_point);
 
             // io_end = __rdtscp(&io_cpu_end);
 
