@@ -1456,10 +1456,8 @@ void PQFlashIndex<T, LabelT>::cached_beam_search(const T *query1, const uint64_t
 
         //     __builtin_prefetch((char*)node_disk_buf, 0, 3);
         //     __builtin_prefetch((char*)node_disk_buf + 64, 0, 3);
-        //     __builtin_prefetch((char*)node_disk_buf, 128, 3);
-        //     __builtin_prefetch((char*)node_disk_buf, 192, 3);
-            
-            
+        //     __builtin_prefetch((char*)node_disk_buf + 128, 0, 3);
+        //     __builtin_prefetch((char*)node_disk_buf + 192, 0, 3);
         // }
 
         compute_start = __rdtscp(&compute_cpu_start);
