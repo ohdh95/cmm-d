@@ -30,8 +30,16 @@ struct QueryStats
     unsigned long long cpu_cycle = 0; // total cycles for query processing
     unsigned long long cpu_cycle1 = 0; // total cycles for query processing
     unsigned long long cpu_cycle2 = 0; // total cycles for query processing
+    unsigned long long cpu_cycle2_1 = 0; // split CPU2 part 1 cycles
+    unsigned long long cpu_cycle2_2 = 0; // split CPU2 part 2 cycles
     unsigned long long cpu_cycle3 = 0; // total cycles for query processing
     unsigned long long cpu_cycle4 = 0; // total cycles for query processing
+    unsigned long long zero_copy_cpu1_iter_cycle[5] = {0, 0, 0, 0, 0}; // 1st,2nd,3rd,4th,>=5th
+    unsigned long long zero_copy_cpu2_iter_cycle[5] = {0, 0, 0, 0, 0}; // 1st,2nd,3rd,4th,>=5th
+    unsigned long long zero_copy_cpu3_iter_cycle[5] = {0, 0, 0, 0, 0}; // 1st,2nd,3rd,4th,>=5th
+    unsigned long long zero_copy_cpu1_iter_count[5] = {0, 0, 0, 0, 0}; // samples for cpu1
+    unsigned long long zero_copy_cpu2_iter_count[5] = {0, 0, 0, 0, 0}; // samples for cpu2
+    unsigned long long zero_copy_cpu3_iter_count[5] = {0, 0, 0, 0, 0}; // samples for cpu3
     unsigned n_4k = 0;         // # of 4kB reads
     unsigned n_8k = 0;         // # of 8kB reads
     unsigned n_12k = 0;        // # of 12kB reads

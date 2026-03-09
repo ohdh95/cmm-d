@@ -304,6 +304,60 @@ int search_disk_index(diskann::Metric &metric, const std::string &index_path_pre
         auto mean_io_us = diskann::get_mean_stats<float>(stats, query_num,
                                                          [](const diskann::QueryStats &stats) { return stats.io_cycle; });
 
+        auto get_zero_copy_totals = [&](uint32_t cpu_stage, size_t order_bucket) {
+            unsigned long long total_cycles = 0;
+            unsigned long long total_count = 0;
+            for (uint64_t i = 0; i < query_num; i++)
+            {
+                const auto &cur = stats[i];
+                const unsigned long long *cycles = nullptr;
+                const unsigned long long *counts = nullptr;
+
+                if (cpu_stage == 1)
+                {
+                    cycles = cur.zero_copy_cpu1_iter_cycle;
+                    counts = cur.zero_copy_cpu1_iter_count;
+                }
+                else if (cpu_stage == 2)
+                {
+                    cycles = cur.zero_copy_cpu2_iter_cycle;
+                    counts = cur.zero_copy_cpu2_iter_count;
+                }
+                else
+                {
+                    cycles = cur.zero_copy_cpu3_iter_cycle;
+                    counts = cur.zero_copy_cpu3_iter_count;
+                }
+                total_cycles += cycles[order_bucket];
+                total_count += counts[order_bucket];
+            }
+            return std::make_pair(total_cycles, total_count);
+        };
+
+        auto to_us = [&](const std::pair<unsigned long long, unsigned long long> &v) {
+            if (query_num == 0)
+                return 0.0;
+            return (double)v.first / (double)query_num / frequency_mhz;
+        };
+
+        auto print_zero_copy_stage = [&](uint32_t cpu_stage, const std::string &stage_name) {
+            const auto iter1 = get_zero_copy_totals(cpu_stage, 0);
+            const auto iter2 = get_zero_copy_totals(cpu_stage, 1);
+            const auto iter3 = get_zero_copy_totals(cpu_stage, 2);
+            const auto iter4 = get_zero_copy_totals(cpu_stage, 3);
+            const auto iter5p = get_zero_copy_totals(cpu_stage, 4);
+            const auto total_cycles = iter1.first + iter2.first + iter3.first + iter4.first + iter5p.first;
+            if (total_cycles == 0)
+                return;
+
+            diskann::cout << stage_name << " per-order latency (us): "
+                          << "1st=" << to_us(iter1) << ", "
+                          << "2nd=" << to_us(iter2) << ", "
+                          << "3rd=" << to_us(iter3) << ", "
+                          << "4th=" << to_us(iter4) << ", "
+                          << "5th+=" << to_us(iter5p) << std::endl;
+        };
+
         double recall = 0;
         if (calc_recall_flag)
         {
@@ -321,6 +375,10 @@ int search_disk_index(diskann::Metric &metric, const std::string &index_path_pre
         }
         else
             diskann::cout << std::endl;
+
+        print_zero_copy_stage(1, "CPU1");
+        print_zero_copy_stage(2, "CPU2");
+        print_zero_copy_stage(3, "CPU3");
         delete[] stats;
     }
 
